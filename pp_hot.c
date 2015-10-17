@@ -2620,12 +2620,11 @@ PP(pp_multideref)
 
 PP(pp_iter)
 {
-    dSP;
     PERL_CONTEXT *cx;
     SV *oldsv;
     SV **itersvp;
+    SV *retsv;
 
-    EXTEND(SP, 1);
     cx = &cxstack[cxstack_ix];
     itersvp = CxITERVAR(cx);
 
@@ -2640,7 +2639,7 @@ PP(pp_iter)
         STRLEN maxlen = 0;
         const char *max = SvPV_const(end, maxlen);
         if (UNLIKELY(SvNIOK(cur) || SvCUR(cur) > maxlen))
-            RETPUSHNO;
+            goto retno;
 
         oldsv = *itersvp;
         if (LIKELY(SvREFCNT(oldsv) == 1 && !SvMAGICAL(oldsv))) {
@@ -2666,7 +2665,7 @@ PP(pp_iter)
     {
         IV cur = cx->blk_loop.state_u.lazyiv.cur;
 	if (UNLIKELY(cur > cx->blk_loop.state_u.lazyiv.end))
-	    RETPUSHNO;
+	    goto retno;
 
         oldsv = *itersvp;
 	/* don't risk potential race */
@@ -2706,7 +2705,7 @@ PP(pp_iter)
                         ? ix > cx->blk_oldsp
                         : ix <= cx->blk_loop.state_u.stack.basesp)
         )
-            RETPUSHNO;
+            goto retno;
 
         sv = PL_stack_base[ix];
         av = NULL;
@@ -2721,7 +2720,7 @@ PP(pp_iter)
                         ? ix > AvFILL(av)
                         : ix < 0)
         )
-            RETPUSHNO;
+            goto retno;
 
         if (UNLIKELY(SvMAGICAL(av) || AvREIFY(av))) {
             SV * const * const svp = av_fetch(av, ix, FALSE);
@@ -2766,7 +2765,19 @@ PP(pp_iter)
     default:
 	DIE(aTHX_ "panic: pp_iter, type=%u", CxTYPE(cx));
     }
-    RETPUSHYES;
+
+    retsv = &PL_sv_yes;
+    if (0) {
+      retno:
+        retsv = &PL_sv_no;
+    }
+    /* pp_enteriter should have pre-extended the stack */
+    assert(PL_stack_sp < PL_stack_max);
+    *++PL_stack_sp =retsv;
+
+    return PL_op->op_next;
+
+
 }
 
 /*
