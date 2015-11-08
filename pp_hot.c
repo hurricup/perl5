@@ -3346,6 +3346,11 @@ PP(pp_leavesub)
 	    }
 	}
     }
+    else {
+        /* G_VOID */
+        SP = newsp;
+    }
+
     PUTBACK;
 
     CX_LEAVE_SCOPE(cx);
