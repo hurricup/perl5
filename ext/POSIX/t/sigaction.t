@@ -200,6 +200,9 @@ SKIP: {
     my %always = map +($_ => 1), qw(signo code);
     my %skip = ( code => { darwin => "not set to SI_USER for kill()" } );
     my $tests = keys %{{ %siginfo, %opt_val }};
+    my $oconfigosvers = $^O . $Config{osvers}; 
+    $skip{pid}{$^O} = $skip{uid}{$^O} = "not set for kill()"
+        if $oconfigosvers =~ /^darwin[0-8]\./;
     eval 'use POSIX qw(SA_SIGINFO); SA_SIGINFO';
     skip("no SA_SIGINFO", $tests) if $@;
     skip("SA_SIGINFO is broken on AIX 4.2", $tests) if ($^O.$Config{osvers}) =~ m/^aix4\.2/;
