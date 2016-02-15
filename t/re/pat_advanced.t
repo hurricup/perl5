@@ -2241,6 +2241,8 @@ EOF
     {
         unlike("\xB5", qr/^_?\p{IsMyRuntimeProperty}\z/, "yadayada");
         like("\xB6", qr/^_?\p{IsMyRuntimeProperty}\z/, "yadayada");
+        like("\xB6", qr/^_?\p{IsMyRuntimeProperty}\z/i, "yadayada");
+        # XXX more with class name
         unlike("\xB7", qr/^_?\p{IsMyRuntimeProperty}\z/, "yadayada");
         like("\xB5", qr/^_?\P{IsMyRuntimeProperty}\z/, "yadayada");
         unlike("\xB6", qr/^_?\P{IsMyRuntimeProperty}\z/, "yadayada");
