@@ -2918,6 +2918,7 @@ AiM	|void	|cx_popgiven     |NN PERL_CONTEXT *cx
 #endif
 
 #ifdef USE_DTRACE
+XEop    |void   |dtrace_probe__fix_linkage_|NN CV *cv
 XEop    |void   |dtrace_probe_call |NN CV *cv|bool is_call
 XEop    |void   |dtrace_probe_load |NN const char *name|bool is_loading
 XEop    |void   |dtrace_probe_op   |NN const OP *op

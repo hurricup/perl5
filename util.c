@@ -6622,6 +6622,22 @@ int perl_tsa_mutex_destroy(perl_mutex* mutex)
 
 #ifdef USE_DTRACE
 
+/* This is a fake function not intended to be called.
+ * Its sole purpose is to avoid a linkage problem under Solaris and
+ * USE_DTRACE. When PERL_DTRACE_PROBE_ENTRY etc are used within the inline
+ * cx_pushsub etc functions, for some reason the linker doesn't pick up
+ * the symbols used by the probe macro. (RT #127543).
+ * If anyone can think of a better fix, this function can be deleted.
+ */
+void
+Perl_dtrace_probe__fix_linkage_(pTHX_ CV *cv)
+{
+    PERL_ARGS_ASSERT_DTRACE_PROBE__FIX_LINKAGE_;
+
+    PERL_DTRACE_PROBE_ENTRY(cv);
+    PERL_DTRACE_PROBE_RETURN(cv);
+}
+
 /* log a sub call or return */
 
 void

@@ -5472,6 +5472,9 @@ PERL_CALLCONV Perl_c_backtrace*	Perl_get_c_backtrace(pTHX_ int max_depth, int sk
 PERL_CALLCONV SV*	Perl_get_c_backtrace_dump(pTHX_ int max_depth, int skip);
 #endif
 #if defined(USE_DTRACE)
+PERL_CALLCONV void	Perl_dtrace_probe__fix_linkage_(pTHX_ CV *cv);
+#define PERL_ARGS_ASSERT_DTRACE_PROBE__FIX_LINKAGE_	\
+	assert(cv)
 PERL_CALLCONV void	Perl_dtrace_probe_call(pTHX_ CV *cv, bool is_call);
 #define PERL_ARGS_ASSERT_DTRACE_PROBE_CALL	\
 	assert(cv)

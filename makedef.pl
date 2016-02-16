@@ -429,6 +429,7 @@ unless ($define{'PERL_OP_PARENT'}) {
 
 unless ($define{'USE_DTRACE'}) {
     ++$skip{$_} foreach qw(
+                    Perl_dtrace_probe__fix_linkage_
                     Perl_dtrace_probe_call
                     Perl_dtrace_probe_load
                     Perl_dtrace_probe_op
