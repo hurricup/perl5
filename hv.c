@@ -734,10 +734,15 @@ Perl_hv_common(pTHX_ HV *hv, SV *keysv, const char *key, STRLEN klen,
 	}
     }
 
-    if (keysv && (SvIsCOW_shared_hash(keysv))) {
-        if (HvSHAREKEYS(hv))
-            keysv_hek  = SvSHARED_HEK_FROM_PV(SvPVX_const(keysv));
-        hash = SvSHARED_HASH(keysv);
+    if (keysv && (SvIsCOW_shared_hash(keysv))
+#ifdef USE_ITHREADS
+	&& ((Size_t)key & 0x3) == 0
+#endif
+	) {
+	HEK * keysv_hektmp  = SvSHARED_HEK_FROM_PV(key);
+	if (HvSHAREKEYS(hv))
+	    keysv_hek  = keysv_hektmp;
+	hash = HEK_HASH(keysv_hektmp);
     }
     else if (!hash)
         PERL_HASH(hash, key, klen);
@@ -1182,7 +1187,11 @@ S_hv_delete_common(pTHX_ HV *hv, SV *keysv, const char *key, STRLEN klen,
         HvHASKFLAGS_on(MUTABLE_SV(hv));
     }
 
-    if (keysv && (SvIsCOW_shared_hash(keysv))) {
+    if (keysv && (SvIsCOW_shared_hash(keysv))
+#ifdef USE_ITHREADS
+	&& ((Size_t)SvPVX_const(keysv) & 0x3) == 0
+#endif
+	) {
         if (HvSHAREKEYS(hv))
             keysv_hek  = SvSHARED_HEK_FROM_PV(SvPVX_const(keysv));
         hash = SvSHARED_HASH(keysv);
@@ -3485,8 +3494,12 @@ Perl_refcounted_he_fetch_sv(pTHX_ const struct refcounted_he *chain,
     keypv = SvPV_const(key, keylen);
     if (SvUTF8(key))
 	flags |= REFCOUNTED_HE_KEY_UTF8;
-    if (!hash && SvIsCOW_shared_hash(key))
-	hash = SvSHARED_HASH(key);
+    if (!hash && SvIsCOW_shared_hash(key)
+#ifdef USE_ITHREADS
+	&& ((Size_t)keypv & 0x3) == 0
+#endif
+	)
+	hash = HEK_HASH(SvSHARED_HEK_FROM_PV(keypv));
     return refcounted_he_fetch_pvn(chain, keypv, keylen, hash, flags);
 }
 
@@ -3673,8 +3686,12 @@ Perl_refcounted_he_new_sv(pTHX_ struct refcounted_he *parent,
     keypv = SvPV_const(key, keylen);
     if (SvUTF8(key))
 	flags |= REFCOUNTED_HE_KEY_UTF8;
-    if (!hash && SvIsCOW_shared_hash(key))
-	hash = SvSHARED_HASH(key);
+    if (!hash && SvIsCOW_shared_hash(key)
+#ifdef USE_ITHREADS
+	&& ((Size_t)keypv & 0x3) == 0
+#endif
+	)
+	hash = HEK_HASH(SvSHARED_HEK_FROM_PV(keypv));
     return refcounted_he_new_pvn(parent, keypv, keylen, hash, value, flags);
 }
 
