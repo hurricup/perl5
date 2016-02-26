@@ -227,17 +227,27 @@ Perl_hek_dup(pTHX_ HEK *source, CLONE_PARAMS* param)
     if (!source)
 	return NULL;
 
-    shared = (HEK*)ptr_table_fetch(PL_ptr_table, source);
-    if (shared) {
-	/* We already shared this hash key.  */
-	(void)share_hek_hek(shared);
+#ifdef USE_ITHREADS
+    if (HEK_FLAGS(source) & HVhek_COMPILING) {
+	CHEK * chek = FNPV2CHEK(HEK2FNPV(source));
+	chek_inc(chek);
+	shared = source;
+    } else {
+#endif
+	shared = (HEK*)ptr_table_fetch(PL_ptr_table, source);
+	if (shared) {
+	    /* We already shared this hash key.  */
+	    (void)share_hek_hek(shared);
+	}
+	else {
+	    shared
+		= share_hek_flags(HEK_KEY(source), HEK_LEN(source),
+				  HEK_HASH(source), HEK_FLAGS(source));
+	    ptr_table_store(PL_ptr_table, source, shared);
+	}
+#ifdef USE_ITHREADS
     }
-    else {
-	shared
-	    = share_hek_flags(HEK_KEY(source), HEK_LEN(source),
-			      HEK_HASH(source), HEK_FLAGS(source));
-	ptr_table_store(PL_ptr_table, source, shared);
-    }
+#endif
     return shared;
 }
 
@@ -2951,7 +2961,11 @@ S_unshare_hek_or_pvn(pTHX_ const HEK *hek, const char *str, I32 len, U32 hash)
 	/* if CHEKs are stored in SVPVs like HEKs, for example caller
 	 change here possibly */
 #ifdef USE_ITHREADS
-	assert((HEK_FLAGS(hek) & HVhek_COMPILING) == 0);
+	if(HEK_FLAGS(hek) & HVhek_COMPILING) {
+	    CHEK * chek = FNPV2CHEK(HEK2FNPV(hek));
+	    chek_dec(chek);
+	    return;
+	}
 #endif
 	/* Find the shared he which is just before us in memory.  */
 	he = (struct shared_he *)(((char *)hek)
