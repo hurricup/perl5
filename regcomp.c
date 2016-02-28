@@ -13611,9 +13611,7 @@ S_populate_ANYOF_from_invlist(pTHX_ regnode *node, SV** invlist_ptr)
 /* 'posix_warnings' and 'warn_text' are names of variables in the following
  * routine. q.v. */
 #define ADD_POSIX_WARNING(p, text)  STMT_START {                            \
-        if (posix_warnings && (   posix_warnings != (AV **) -1              \
-                               || (PASS2 && ckWARN(WARN_REGEXP))))          \
-        {                                                                   \
+        if (posix_warnings) {                                               \
             if (! warn_text) warn_text = newAV();                           \
             av_push(warn_text, Perl_newSVpvf(aTHX_                          \
                                              WARNING_PREFIX                 \
@@ -13632,8 +13630,9 @@ S_handle_possible_posix(pTHX_ RExC_state_t *pRExC_state,
                                   besides RExC_parse. */
     char ** updated_parse_ptr, /* Where to set the updated parse pointer, or
                                   NULL */
-    AV ** posix_warnings       /* Where to place any generated warnings, or -1
-                                  if to output them, or NULL */
+    AV ** posix_warnings,      /* Where to place any generated warnings, or
+                                  NULL */
+    const bool check_only      /* Don't die if error */
 )
 {
     /* This parses what the caller thinks may be one of the three POSIX
@@ -13659,19 +13658,13 @@ S_handle_possible_posix(pTHX_ RExC_state_t *pRExC_state,
      *      'updated_parse_ptr' is not changed.  No warnings nor errors are
      *      raised.
      *
-     * In b) there may be warnings and even errors generated.  What to do about
-     * these is determined by the 'posix_warnings' parameter.  If it is NULL,
-     * this call is treated as a check-only, scouting-out-the-territory call,
-     * and no warnings nor errors are generated at all.  Otherwise, any errors
-     * are raised if found.  If 'posix_warnings' is -1 (appropriately cast),
-     * warnings are generated and displayed (in pass 2), just as they would be
-     * for any other message of the same type from this file.  If it isn't NULL
-     * and not -1, warnings aren't displayed, but instead an AV is generated
-     * with all the warning messages (that aren't to be ignored) stored into
-     * it, so that the caller can output them if it wants.  This is done in all
+     * In b) there may be errors or warnings generated.  If 'check_only' is
+     * TRUE, then any errors are discarded.  Warnings are returned to the
+     * caller via an AV* created into '*posix_warnings' if it is not NULL.  If
+     * instead it is NULL, warnings are suppressed.  This is done in all
      * passes.  The reason for this is that the rest of the parsing is heavily
      * dependent on whether this routine found a valid posix class or not.  If
-     * it did, the closing ']' is absorbed as part of the class.  If no class
+     * it did, the closing ']' is absorbed as part of the class.  If no class,
      * or an invalid one is found, any ']' will be considered the terminator of
      * the outer bracketed character class, leading to very different results.
      * In particular, a '(?[ ])' construct will likely have a syntax error if
@@ -13826,7 +13819,7 @@ S_handle_possible_posix(pTHX_ RExC_state_t *pRExC_state,
                 temp_ptr++;
                 if (*temp_ptr == ']') {
                     temp_ptr++;
-                    if (! found_problem && posix_warnings) {
+                    if (! found_problem && ! check_only) {
                         RExC_parse = (char *) temp_ptr;
                         vFAIL3("POSIX syntax [%c %c] is reserved for future "
                                "extensions", open_char, open_char);
@@ -14392,16 +14385,10 @@ S_handle_possible_posix(pTHX_ RExC_state_t *pRExC_state,
             }
 
             if (warn_text) {
-                if (posix_warnings != (AV **) -1) {
+                if (posix_warnings) {
                     *posix_warnings = warn_text;
                 }
                 else {
-                    SV * msg;
-                    while ((msg = av_shift(warn_text)) != &PL_sv_undef) {
-                        Perl_warner(aTHX_ packWARN(WARN_REGEXP),
-                                    "%s", SvPVX(msg));
-                        SvREFCNT_dec_NN(msg);
-                    }
                     SvREFCNT_dec_NN(warn_text);
                 }
             }
@@ -14412,7 +14399,7 @@ S_handle_possible_posix(pTHX_ RExC_state_t *pRExC_state,
              * one */
             return class_number + complement;
         }
-        else if (posix_warnings) {
+        else if (! check_only) {
 
             /* Here, it is an unrecognized class.  This is an error (unless the
             * call is to check only, which we've already handled above) */
@@ -14538,7 +14525,8 @@ S_handle_regex_sets(pTHX_ RExC_state_t *pRExC_state, SV** return_invlist,
                             < handle_possible_posix(pRExC_state,
                                                 RExC_parse + 1,
                                                 NULL,
-                                                NULL));
+                                                NULL,
+                                                TRUE /* checking only */));
                     /* If it is a posix class, leave the parse pointer at the
                      * '[' to fool regclass() into thinking it is part of a
                      * '[[:posix:]]'. */
@@ -14597,12 +14585,11 @@ S_handle_regex_sets(pTHX_ RExC_state_t *pRExC_state, SV** return_invlist,
         /* We output the messages even if warnings are off, because we'll fail
          * the very next thing, and these give a likely diagnosis for that */
         if (posix_warnings) {
-            SV * msg;
-            while ((msg = av_shift(posix_warnings)) != &PL_sv_undef) {
-                Perl_warner(aTHX_ packWARN(WARN_REGEXP), "%s", SvPVX(msg));
-                SvREFCNT_dec_NN(msg);
+            if (av_tindex(posix_warnings) >= 0) {
+                output_or_return_posix_warnings(pRExC_state, posix_warnings, NULL);
             }
             SvREFCNT_dec_NN(posix_warnings);
+            posix_warnings = NULL;
         }
 
         FAIL("Syntax error in (?[...])");
@@ -14843,7 +14830,8 @@ redo_curchar:
                             < handle_possible_posix(pRExC_state,
                                                 RExC_parse + 1,
                                                 NULL,
-                                                NULL));
+                                                NULL,
+                                                TRUE /* checking only */));
                 /* If it is a posix class, leave the parse pointer at the '['
                  * to fool regclass() into thinking it is part of a
                  * '[[:posix:]]'. */
@@ -15318,6 +15306,27 @@ S_add_above_Latin1_folds(pTHX_ RExC_state_t *pRExC_state, const U8 cp, SV** invl
     }
 }
 
+STATIC void
+S_output_or_return_posix_warnings(pTHX_ RExC_state_t *pRExC_state, AV* posix_warnings, AV** return_posix_warnings)
+{
+    SV * msg;
+
+    PERL_ARGS_ASSERT_OUTPUT_OR_RETURN_POSIX_WARNINGS;
+
+    while ((msg = av_shift(posix_warnings)) != &PL_sv_undef) {
+        if (return_posix_warnings) {
+            if (! *return_posix_warnings) {
+                *return_posix_warnings = newAV();
+            }
+            av_push(*return_posix_warnings, msg);
+        }
+        else {
+            Perl_warner(aTHX_ packWARN(WARN_REGEXP), "%s", SvPVX(msg));
+            SvREFCNT_dec_NN(msg);
+        }
+    }
+}
+
 STATIC AV *
 S_add_multi_match(pTHX_ AV* multi_char_matches, SV* multi_string, const STRLEN cp_count)
 {
@@ -15513,12 +15522,16 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
     const SSize_t orig_size = RExC_size;
     bool posixl_matches_all = FALSE; /* Does /l class have both e.g. \W,\w ? */
 
-    /* This variable is used to mark where in the input something that looks
-     * like a POSIX construct ends.  During the parse, when something looks
-     * like it could be such a construct is encountered, it is checked for
-     * being one, but not if we've already checked this area of the input.
-     * Only after this position is reached do we check again */
+    /* This variable is used to mark where the end in the input is of something
+     * that looks like a POSIX construct but isn't.  During the parse, when
+     * something looks like it could be such a construct is encountered, it is
+     * checked for being one, but not if we've already checked this area of the
+     * input.  Only after this position is reached do we check again */
     char *not_posix_region_end = RExC_parse - 1;
+
+    AV* posix_warnings = NULL;
+    const bool do_posix_warnings =     return_posix_warnings
+                                   || (PASS2 && ckWARN(WARN_REGEXP));
 
     GET_RE_DEBUG_FLAGS_DECL;
 
@@ -15534,10 +15547,6 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
                                    && UNICODE_DOT_DOT_VERSION == 0)
     allow_multi_folds = FALSE;
 #endif
-
-    if (return_posix_warnings == NULL) {
-        return_posix_warnings = (AV **) -1;
-    }
 
     /* Assume we are going to generate an ANYOF node. */
     ret = reganode(pRExC_state,
@@ -15573,16 +15582,15 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
 
     /* Check that they didn't say [:posix:] instead of [[:posix:]] */
     if (! ret_invlist && MAYBE_POSIXCC(UCHARAT(RExC_parse))) {
-        char *class_end;
         int maybe_class = handle_possible_posix(pRExC_state,
                                                 RExC_parse,
-                                                &class_end,
-                                                NULL);
-        if (maybe_class >= OOB_NAMEDCLASS) {
-            not_posix_region_end = class_end;
-            if (PASS2 && return_posix_warnings == (AV **) -1) {
+                                                &not_posix_region_end,
+                                                NULL,
+                                                TRUE /* checking only */);
+        if (maybe_class >= OOB_NAMEDCLASS && do_posix_warnings) {
+            if (PASS2) {
                 SAVEFREESV(RExC_rx_sv);
-                ckWARN4reg(class_end,
+                ckWARN4reg(not_posix_region_end,
                         "POSIX syntax [%c %c] belongs inside character classes%s",
                         *RExC_parse, *RExC_parse,
                         (maybe_class == OOB_NAMEDCLASS)
@@ -15607,6 +15615,27 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
 	goto charclassloop;
 
     while (1) {
+
+        /* Warnings about posix class issues are considered tentative until we
+         * are far enough along in the parse that we can no longer change our
+         * mind, at which point we either output them or add them to what gets
+         * XXX has to be done so a later class won't zap them returned to the caller, if it has so specified.  We do this each
+         * time through the loop so as to minimize the number of warnings that
+         * are out-of-order.  This can happen if another warning is generated
+         * for something that is in the region where we thought a posix
+         * construct was intended.  By outputting them now instead of only at
+         * the end of the loop, they will get output before any warnings that
+         * apply to things further along in the input */
+        if (   posix_warnings
+            && av_tindex(posix_warnings) >= 0
+            && RExC_parse > not_posix_region_end)
+        {
+            output_or_return_posix_warnings(pRExC_state, posix_warnings,
+                                            return_posix_warnings);
+            SvREFCNT_dec_NN(posix_warnings);
+            posix_warnings = NULL;
+        }
+
         if  (RExC_parse >= stop_ptr) {
             break;
         }
@@ -15638,12 +15667,31 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
 	    value = UCHARAT(RExC_parse++);
 
         if (value == '[') {
+            char * posix_class_end;
             namedclass = handle_possible_posix(pRExC_state,
                                                RExC_parse,
-                                               &not_posix_region_end,
-                                               return_posix_warnings);
+                                               &posix_class_end,
+                                               do_posix_warnings ? &posix_warnings : NULL,
+                                               FALSE    /* die if error */);
             if (namedclass > OOB_NAMEDCLASS) {
-                RExC_parse = not_posix_region_end;
+
+                /* If there was an earlier attempt to parse this particular
+                 * posix class, and it failed, it was a false alarm, as
+                 * indicated by this successful one */
+                if (   posix_warnings
+                    && av_tindex(posix_warnings) >= 0
+                    && not_posix_region_end >= RExC_parse
+                    && not_posix_region_end <= posix_class_end)
+                {
+                    av_undef(posix_warnings);
+                    SvREFCNT_dec_NN((SV *) posix_warnings);
+                    posix_warnings = NULL;
+                }
+
+                RExC_parse = posix_class_end;
+            }
+            else if (namedclass == OOB_NAMEDCLASS) {
+                not_posix_region_end = posix_class_end;
             }
             else {
                 namedclass = OOB_NAMEDCLASS;
@@ -15657,7 +15705,8 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
                         RExC_parse - 1,  /* -1 because parse has already been
                                             advanced */
                         &not_posix_region_end,
-                        return_posix_warnings);
+                        do_posix_warnings ? &posix_warnings : NULL,
+                        TRUE /* checking only */);
         }
         else if (value == '\\') {
             /* Is a backslash; get the code point of the char after it */
@@ -16571,6 +16620,14 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
 
 	range = 0; /* this range (if it was one) is done now */
     } /* End of loop through all the text within the brackets */
+
+
+    if (   posix_warnings && av_tindex(posix_warnings) >= 0) {
+        output_or_return_posix_warnings(pRExC_state, posix_warnings,
+                                        return_posix_warnings);
+        SvREFCNT_dec_NN(posix_warnings);
+        posix_warnings = NULL;
+    }
 
     /* If anything in the class expands to more than one character, we have to
      * deal with them by building up a substitute parse string, and recursively
